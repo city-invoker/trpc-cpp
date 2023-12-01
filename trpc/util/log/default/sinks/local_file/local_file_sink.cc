@@ -12,6 +12,7 @@
 //
 
 #include "trpc/util/log/default/sinks/local_file/local_file_sink.h"
+#include "trpc/util/log/default/sinks/extend/req_id_flag_formatter.h"
 
 namespace trpc {
 
@@ -40,9 +41,14 @@ int LocalFileSink::Init(const LocalFileSinkConfig& config) {
   std::string format = config_.format;
   std::string eol = config_.eol ? spdlog::details::os::default_eol : "";
 
-  auto formatter = format.empty()
-                       ? std::make_unique<spdlog::pattern_formatter>(spdlog::pattern_time_type::local, eol)
-                       : std::make_unique<spdlog::pattern_formatter>(format, spdlog::pattern_time_type::local, eol);
+  //auto formatter = format.empty()
+  //                     ? std::make_unique<spdlog::pattern_formatter>(spdlog::pattern_time_type::local, eol)
+  //                     : std::make_unique<spdlog::pattern_formatter>(format, spdlog::pattern_time_type::local, eol);
+  auto formatter = std::make_unique<spdlog::pattern_formatter>(spdlog::pattern_time_type::local, eol);
+  if (!format.empty()) {
+    formatter->add_flag<trpc::ReqIdFlagFormatter>('q');
+    formatter->set_pattern(format);
+  }
   sink_->set_formatter(std::move(formatter));
 
   return 0;
