@@ -49,21 +49,6 @@ int LocalFileSink::Init(const LocalFileSinkConfig& config) {
   return 0;
 }
 
-template<class T, class = typename std::enable_if<std::is_base_of<spdlog::custom_flag_formatter, T>::value>::type >
-int LocalFileSink::SetCustomFlag(const char& flag) {
-  std::string format = config_.format;
-  if (format.empty() || format.find(flag) == std::string::npos) {
-    return 0;
-  }
-  std::string eol = config_.eol ? spdlog::details::os::default_eol : "";
-  auto formatter = std::make_unique<spdlog::pattern_formatter>(spdlog::pattern_time_type::local, eol);
-  formatter->add_flag<T>(flag);
-  formatter->set_pattern(format);
-  sink_->set_formatter(std::move(formatter));
-  return 0;
-}
-
-
 bool LocalFileSink::RemoveTimeoutDailyLogFile(const std::string& file_name, int reserver_count) {
   std::string file_exe_path = trpc::ExtractFilePath(file_name);
   std::vector<std::string> files;

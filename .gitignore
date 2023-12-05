@@ -3,6 +3,7 @@
 
 bazel-*
 *.swp
+*.swo
 *.o
 *.log
 *.so

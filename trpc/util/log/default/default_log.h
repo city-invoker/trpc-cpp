@@ -23,6 +23,7 @@
 
 #include "spdlog/async.h"
 #include "spdlog/spdlog.h"
+#include "spdlog/pattern_formatter.h"
 
 #include "trpc/common/config/default_log_conf.h"
 #include "trpc/log/logging.h"
@@ -121,6 +122,33 @@ class DefaultLog : public Log {
     return true;
   }
 
+  /// @brief Set sink custom flag 
+  /// @param logger_name The name of the logger instance to search in.
+  /// @param flag The custom flag 
+  /// @return 0 
+  template<typename Sink, typename SinkConfig, typename CustomFormatter>
+  int SetCustomFlag(const char* logger_name, const char flag) {
+      if (instances_.find(logger_name) == instances_.end()) {
+        return 0;
+      }
+
+      auto& instance = instances_[logger_name];
+      SinkConfig sink_config;
+      // configuration does not exist and return
+      if (!GetLoggerConfig<SinkConfig>(instance.config.name, sink_config)) return 0;
+
+      std::string format = sink_config.format;
+      if (format.empty() || format.find(flag) == std::string::npos) {
+        return 0;
+      }
+      std::string eol = sink_config.eol ? spdlog::details::os::default_eol : "";
+      auto formatter = std::make_unique<spdlog::pattern_formatter>(spdlog::pattern_time_type::local, eol);
+      formatter->add_flag<CustomFormatter>(flag);
+      formatter->set_pattern(format);
+      instance.logger->sinks()[0]->set_formatter(std::move(formatter));
+      return 0;
+  }
+
   /// @brief Registering the remote sink to spdlog's Logger
   /// @param logger_name The logger_name to init
   /// @return bool success/failure
@@ -167,6 +195,7 @@ class DefaultLog : public Log {
 
   // Collection of log instances
   std::unordered_map<std::string, Logger> instances_;
+
 };
 
 using DefaultLogPtr = RefPtr<DefaultLog>;
