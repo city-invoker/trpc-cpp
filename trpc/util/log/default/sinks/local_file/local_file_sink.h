@@ -52,6 +52,9 @@ class LocalFileSink : public RefCounted<LocalFileSink> {
   /// @return int   Return 0 means success and a complex number means failure
   int Init(const LocalFileSinkConfig& config);
 
+  template<class T, class = typename std::enable_if<std::is_base_of<spdlog::custom_flag_formatter, T>::value>::type >
+  int SetCustomFlag(const char& flag);
+
  protected:
   /// @brief In daily log mode, delete log files that have expired locally.
   /// @note  Definition of timeout: Under the condition that the number of log files is set to k,
