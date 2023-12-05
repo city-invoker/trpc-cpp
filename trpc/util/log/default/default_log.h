@@ -195,7 +195,6 @@ class DefaultLog : public Log {
 
   // Collection of log instances
   std::unordered_map<std::string, Logger> instances_;
-
 };
 
 using DefaultLogPtr = RefPtr<DefaultLog>;

@@ -40,10 +40,9 @@ int LocalFileSink::Init(const LocalFileSinkConfig& config) {
   std::string format = config_.format;
   std::string eol = config_.eol ? spdlog::details::os::default_eol : "";
 
-  auto formatter = std::make_unique<spdlog::pattern_formatter>(spdlog::pattern_time_type::local, eol);
-  if (!format.empty()) {
-    formatter->set_pattern(format);
-  }
+  auto formatter = format.empty()
+                       ? std::make_unique<spdlog::pattern_formatter>(spdlog::pattern_time_type::local, eol)
+                       : std::make_unique<spdlog::pattern_formatter>(format, spdlog::pattern_time_type::local, eol);
   sink_->set_formatter(std::move(formatter));
 
   return 0;

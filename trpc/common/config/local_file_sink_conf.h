@@ -15,7 +15,6 @@
 
 #include <string>
 #include <string_view>
-#include <vector>
 
 #include "trpc/common/config/default_log_conf.h"
 
@@ -44,8 +43,7 @@ struct LocalFileSinkConfig {
 
   /// @brief Represents an hourly interval in hours, default interval is one hour
   unsigned int hour_interval{1};
-  /// @brief spdlog custom flag 
-  std::vector<char> flags;
+
   /// @brief Print the configuration
   void Display() const;
 };
