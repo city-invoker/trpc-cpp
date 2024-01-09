@@ -31,6 +31,10 @@ FiberTcpConnection::FiberTcpConnection(Reactor* reactor, const Socket& socket)
 }
 
 FiberTcpConnection::~FiberTcpConnection() {
+  // Requirements: destroy IO-handler before close socket.
+  GetIoHandler()->Destroy();
+  socket_.Close();
+
   TRPC_LOG_DEBUG("~FiberTcpConnection fd:" << socket_.GetFd() << ", conn_id:" << this->GetConnId());
   TRPC_ASSERT(!socket_.IsValid());
 }
@@ -62,7 +66,7 @@ bool FiberTcpConnection::DoConnect() {
 
   int ret = socket_.Connect(remote_addr);
   if (ret == 0) {
-    TRPC_LOG_TRACE("FiberTcpConnection::DoConnect target: " << remote_addr.ToString() << ", fd: " << socket_.GetFd()
+    TRPC_LOG_DEBUG("FiberTcpConnection::DoConnect target: " << remote_addr.ToString() << ", fd: " << socket_.GetFd()
                                                             << ", is_client:" << IsClient()
                                                             << ", conn_id: " << this->GetConnId() << ", progress.");
 
@@ -77,6 +81,7 @@ bool FiberTcpConnection::DoConnect() {
                                                           << ", is_client:" << IsClient()
                                                           << ", conn_id: " << this->GetConnId() << ", failed.");
 
+  GetIoHandler()->Destroy();
   socket_.Close();
 
   return false;
@@ -231,6 +236,10 @@ FiberTcpConnection::ReadStatus FiberTcpConnection::ReadData() {
 }
 
 FiberConnection::EventAction FiberTcpConnection::ConsumeReadData() {
+  if (read_buffer_.buffer.ByteSize() <= 0) {
+    return EventAction::kReady;
+  }
+
   RefPtr ref(ref_ptr, this);
   std::deque<std::any> data;
   int checker_ret = GetConnectionHandler()->CheckMessage(ref, read_buffer_.buffer, data);
@@ -361,7 +370,7 @@ void FiberTcpConnection::OnCleanup(CleanupReason reason) {
 
   writing_buffers_.Stop();
 
-  socket_.Close();
+  // For multi-threads-safety, move "socket_.Close()" to ~FiberTcpConnection();
 }
 
 IoHandler::HandshakeStatus FiberTcpConnection::DoHandshake(bool from_on_readable) {

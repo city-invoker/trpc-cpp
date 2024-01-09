@@ -26,6 +26,8 @@
 #include "spdlog/pattern_formatter.h"
 
 #include "trpc/common/config/default_log_conf.h"
+#include "trpc/common/config/default_log_conf_parser.h"
+#include "trpc/common/config/default_value.h"
 #include "trpc/log/logging.h"
 #include "trpc/util/log/log.h"
 
@@ -77,7 +79,8 @@ class DefaultLog : public Log {
   /// @return true/false
   bool ShouldLog(const char* instance_name, Level level) const override;
 
-  /// @brief Determine whether the log level of the tRPC-Cpp framework instance meets the requirements for printing this log.
+  /// @brief Determine whether the log level of the tRPC-Cpp framework instance meets the requirements for printing this
+  /// log.
   /// @param  level         Log instance level
   /// @return true/false
   bool ShouldLog(Level level) const override;
@@ -102,21 +105,23 @@ class DefaultLog : public Log {
   /// @return bool success/failure
   /// @private For internal use purpose only.
   template <typename Sink, typename SinkConfig>
-  bool InitSink(const char* logger_name) {
+  bool InitSink(const char* logger_name, const char* sink_name) {
     auto& instance = instances_[logger_name];
     auto& conf = instance.config;
     // Get local_file configuration
     SinkConfig sink_config;
     // configuration does not exist and returns true
-    if (!GetLoggerConfig<SinkConfig>(conf.name, sink_config)) return true;
+    if (!YAML::GetDefaultLoggerSinkConfig<SinkConfig>(conf.name, "sinks", sink_name, sink_config)) {
+      return true;
+    }
     auto sink = MakeRefCounted<Sink>();
     sink->Init(sink_config);
     // Add the new sink to the logger's sinks
     instance.logger->sinks().push_back(sink->SpdSink());
 
     // The tRPC-Cpp framework logging instance has been configured
-    if (!strcmp(logger_name, "default")) {
-      inited_trpc_logger_instance_ = true;
+    if (!strcmp(logger_name, kTrpcLogCacheStringDefault)) {
+      initted_trpc_logger_instance_ = true;
       trpc_logger_instance_ = instance;
     }
     return true;
@@ -177,18 +182,18 @@ class DefaultLog : public Log {
   }
 
   // Create an output logger for spdlog
-  bool createSpdLogger(const char* logger_name);
+  bool CreateSpdLogger(const char* logger_name);
 
  private:
   // Default queue length
   static constexpr size_t kThreadPoolQueueSize = 100000;
 
   // Initialization flags
-  bool inited_{false};
+  bool initted_{false};
 
   // Whether the tRPC-Cpp framework logging instance is configured
   // If false, all framework logging will be logged to the console
-  bool inited_trpc_logger_instance_{false};
+  bool initted_trpc_logger_instance_{false};
 
   // tRPC-Cpp framework logger instance
   DefaultLog::Logger trpc_logger_instance_;

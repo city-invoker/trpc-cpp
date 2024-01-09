@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <string>
 
+#include "trpc/common/config/default_value.h"
 #include "trpc/util/log/log.h"
 #include "trpc/util/log/printf_like.h"
 #include "trpc/util/log/python_like.h"
@@ -39,8 +40,7 @@ void Destroy();
 ///// For example, if min_level=1 (debug) and info is the level, then true is returned.
 bool IsLogOn(const char* instance_name, trpc::Log::Level level);
 
-// Constant "default"
-constexpr char kTrpcLogCacheStringDefault[] = "default";
+using trpc::kTrpcLogCacheStringDefault;
 
 }  // namespace trpc::log
 
@@ -259,7 +259,7 @@ constexpr char kTrpcLogCacheStringDefault[] = "default";
 /// @note  Use case: Separate business logs from framework logs,
 ///        Different business logs specify different loggers.
 ///        For example, if remote logs are connected, business logs can be output to remote.
-#define TRPC_FLOW_LOG(instance, msg) TRPC_STREAM(instance, ::trpc::Log::info, msg)
+#define TRPC_FLOW_LOG(instance, msg) TRPC_STREAM(instance, ::trpc::Log::info, nullptr, msg)
 #define TRPC_FLOW_LOG_EX(context, instance, msg) TRPC_STREAM(instance, ::trpc::Log::info, context, msg)
 
 /// @brief Provides ASSERT that does not invalidate in release mode

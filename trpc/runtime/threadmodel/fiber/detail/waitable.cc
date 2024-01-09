@@ -49,8 +49,7 @@ class AsyncWaker {
           // Someone else satisfied the wait earlier.
           return;
         }
-        wait_cb->waiter->scheduling_group->Resume(
-            wait_cb->waiter, std::unique_lock(wait_cb->waiter->scheduler_lock));
+        wait_cb->waiter->scheduling_group->Resume(wait_cb->waiter);
       }
     };
 
@@ -100,7 +99,6 @@ class AsyncWaker {
 bool Waitable::AddWaiter(WaitBlock* waiter) {
   std::scoped_lock _(lock_);
 
-  TRPC_CHECK(waiter->waiter);
   if (persistent_awakened_) {
     return false;
   }
@@ -113,7 +111,7 @@ bool Waitable::TryRemoveWaiter(WaitBlock* waiter) {
   return waiters_.erase(waiter);
 }
 
-FiberEntity* Waitable::WakeOne() {
+WaitBlock* Waitable::WakeOne() {
   std::scoped_lock _(lock_);
   while (true) {
     auto waiter = waiters_.pop_front();
@@ -121,23 +119,28 @@ FiberEntity* Waitable::WakeOne() {
       return nullptr;
     }
     // Memory order is guaranteed by `lock_`.
-    if (waiter->satisfied.exchange(true, std::memory_order_relaxed)) {
-      continue;  // It's awakened by someone else.
+    if (waiter->waiter && waiter->satisfied.exchange(true, std::memory_order_relaxed)) {
+      // For fiber waiter, it's awakened by someone else.
+      continue;
     }
-    return waiter->waiter;
+    return waiter;
   }
 }
 
-void Waitable::SetPersistentAwakened(FiberEntityList& wbs) {
+void Waitable::SetPersistentAwakened(WaitBlockList& wbs) {
   std::scoped_lock _(lock_);
   persistent_awakened_ = true;
 
   while (auto ptr = waiters_.pop_front()) {
     // Same as `WakeOne`.
-    if (ptr->satisfied.exchange(true, std::memory_order_relaxed)) {
+    // `satisfied` is only applied to fiber context.
+    if ((ptr->waiter != nullptr) && ptr->satisfied.exchange(true, std::memory_order_relaxed)) {
       continue;
     }
-    wbs.push_back(ptr->waiter);
+
+    // 1. Push back all fiber context which are not satisfied.
+    // 2. Push back all pthread context.
+    wbs.push_back(ptr);
   }
 }
 
@@ -173,46 +176,68 @@ void WaitableTimer::wait() {
 }
 
 void WaitableTimer::OnTimerExpired(RefPtr<WaitableRefCounted> ref) {
-  FiberEntityList fibers;
-  ref->SetPersistentAwakened(fibers);
+  WaitBlockList wbs;
+  ref->SetPersistentAwakened(wbs);
   while (true) {
-    auto* e = fibers.pop_front();
-    if (!e) {
+    auto* wb = wbs.pop_front();
+    if (!wb) {
       return;
     }
-    e->scheduling_group->Resume(e, std::unique_lock(e->scheduler_lock));
+    // This is fiber waiter.
+    if (wb->waiter) {
+      wb->waiter->scheduling_group->Resume(wb->waiter);
+      continue;
+    }
+
+    // This is pthread waiter.
+    wb->futex.Wake(1);
   }
 }
 
 // Implementation of `Mutex` goes below.
 
 void Mutex::unlock() {
-  TRPC_DCHECK(IsFiberContextPresent());
+  bool is_post = is_post_;
+  is_post_ = false;
 
-  if (auto was = count_.fetch_sub(1, std::memory_order_release); was == 1) {
+  auto was = count_.fetch_sub(1, std::memory_order_release);
+  if (was == 1) {
     // Lucky day, no one is waiting on the mutex.
     //
     // Nothing to do.
-  } else {
-    TRPC_CHECK_GT(was, std::uint32_t(1));
-
-    // We need this lock so as to see a consistent state between `count_` and
-    // `impl_` ('s internal wait queue).
-    std::unique_lock splk(slow_path_lock_);
-    auto fiber = impl_.WakeOne();
-    TRPC_CHECK(fiber);  // Otherwise `was` must be 1 (as there's no waiter).
-    splk.unlock();
-    fiber->scheduling_group->Resume(fiber, std::unique_lock(fiber->scheduler_lock));
+    return;
   }
+  TRPC_CHECK_GT(was, std::uint32_t(1));
+
+  // We need this lock so as to see a consistent state between `count_` and
+  // `impl_` ('s internal wait queue).
+  std::unique_lock splk(slow_path_lock_);
+  auto* wb = impl_.WakeOne();
+  TRPC_CHECK(wb);  // Otherwise `was` must be 1 (as there's no waiter).
+  splk.unlock();
+
+
+  // This is fiber waiter.
+  if (wb->waiter) {
+    if (!is_post) {
+      if (wb->waiter->scheduling_group == SchedulingGroup::Current()) {
+        auto current = GetCurrentFiberEntity();
+        if (current != GetMasterFiberEntity()) {
+          wb->waiter->scheduling_group->Resume(GetCurrentFiberEntity(), wb->waiter);
+          return;
+        }
+      }
+    }
+
+    wb->waiter->scheduling_group->Resume(wb->waiter);
+    return;
+  }
+
+  // This is pthread waiter.
+  wb->futex.Wake(1);
 }
 
-void Mutex::LockSlow() {
-  TRPC_DCHECK(IsFiberContextPresent());
-
-  if (try_lock()) {
-    return;  // Your lucky day.
-  }
-
+void Mutex::LockSlowFromFiber() {
   // It's locked, take the slow path.
   std::unique_lock splk(slow_path_lock_);
 
@@ -228,8 +253,7 @@ void Mutex::LockSlow() {
   auto current = GetCurrentFiberEntity();
   std::unique_lock slk(current->scheduler_lock);
   WaitBlock wb = {.waiter = current};
-  TRPC_CHECK(impl_.AddWaiter(&wb));  // This can't fail as we never call
-                                     // `SetPersistentAwakened()`.
+  TRPC_CHECK(impl_.AddWaiter(&wb));  // This can't fail as we never call `SetPersistentAwakened()`.
 
   // Now the slow path lock can be unlocked.
   //
@@ -250,10 +274,27 @@ void Mutex::LockSlow() {
   return;
 }
 
+void Mutex::LockSlowFromPthread() {
+  std::unique_lock splk(slow_path_lock_);
+
+  if (count_.fetch_add(1, std::memory_order_acquire) == 0) {
+    return;
+  }
+
+  // Set waiter to nullptr as we are in pthread context.
+  WaitBlock wb = {.waiter = nullptr};
+  TRPC_CHECK(impl_.AddWaiter(&wb));
+  trpc::FutexNotifier::State st = wb.futex.GetState();
+
+  splk.unlock();
+
+  // No need to handle return value as we only wait for awakening.
+  wb.futex.Wait(st, nullptr);
+}
+
 // Implementation of `ConditionVariable` goes below.
 
 void ConditionVariable::wait(std::unique_lock<Mutex>& lock) {
-  TRPC_DCHECK(IsFiberContextPresent());
   TRPC_DCHECK(lock.owns_lock());
 
   wait_until(lock, std::chrono::steady_clock::time_point::max());
@@ -262,8 +303,15 @@ void ConditionVariable::wait(std::unique_lock<Mutex>& lock) {
 bool ConditionVariable::wait_until(
     std::unique_lock<Mutex>& lock,
     std::chrono::steady_clock::time_point expires_at) {
-  TRPC_DCHECK(IsFiberContextPresent());
+  if (IsFiberContextPresent()) {
+    return WaitUntilFromFiber(lock, expires_at);
+  }
 
+  return WaitUntilFromPthread(lock, expires_at);
+}
+
+bool ConditionVariable::WaitUntilFromFiber(std::unique_lock<Mutex>& lock,
+                                           std::chrono::steady_clock::time_point expires_at) {
   auto current = GetCurrentFiberEntity();
   auto sg = current->scheduling_group;
   bool use_timeout = expires_at != std::chrono::steady_clock::time_point::max();
@@ -277,6 +325,9 @@ bool ConditionVariable::wait_until(
     awaker.Init(sg, current, &wb);
     awaker->SetTimer(expires_at);
   }
+
+  // Not reschedule fiber when executing the following `lock.unlock()` code
+  lock.mutex()->SetPost();
 
   // Release user's lock.
   lock.unlock();
@@ -298,55 +349,50 @@ bool ConditionVariable::wait_until(
   return !timeout;
 }
 
-void ConditionVariable::notify_one() noexcept {
-  TRPC_DCHECK(IsFiberContextPresent());
+bool ConditionVariable::WaitUntilFromPthread(std::unique_lock<Mutex>& lock,
+                                             std::chrono::steady_clock::time_point expires_at) {
+  // Set waiter to nullptr as we are in pthread context.
+  WaitBlock wb = {.waiter = nullptr};
+  TRPC_CHECK(impl_.AddWaiter(&wb));
+  trpc::FutexNotifier::State st = wb.futex.GetState();
+  lock.unlock();
 
-  auto fiber = impl_.WakeOne();
-  if (!fiber) {
+  bool ret = wb.futex.Wait(st, &expires_at);
+  impl_.TryRemoveWaiter(&wb);
+  lock.lock();
+  return ret;
+}
+
+void ConditionVariable::notify_one() noexcept {
+  auto* wb = impl_.WakeOne();
+  if (!wb) {
     return;
   }
-  fiber->scheduling_group->Resume(fiber, std::unique_lock(fiber->scheduler_lock));
+  // This is fiber waiter.
+  if (wb->waiter) {
+    wb->waiter->scheduling_group->Resume(wb->waiter);
+    return;
+  }
+
+  // This is pthread waiter.
+  wb->futex.Wake(1);
 }
 
 void ConditionVariable::notify_all() noexcept {
-  TRPC_DCHECK(IsFiberContextPresent());
-
-  // We cannot keep calling `notify_one` here. If a waiter immediately goes to
-  // sleep again after we wake up it, it's possible that we wake it again when
-  // we try to drain the wait chain.
-  //
-  // So we remove all waiters first, and schedule them then.
-  std::array<FiberEntity*, 64> fibers_quick;
-  std::size_t array_usage = 0;
-  // We don't want to touch this in most cases.
-  //
-  // Given that `std::vector::vector()` is not allowed to throw, I do believe it
-  // won't allocated memory on construction.
-  FiberEntityList fibers_slow;
-
   while (true) {
-    auto fiber = impl_.WakeOne();
-    if (!fiber) {
-      break;
-    }
-    if (TRPC_LIKELY(array_usage < std::size(fibers_quick))) {
-      fibers_quick[array_usage++] = fiber;
-    } else {
-      fibers_slow.push_back(fiber);
-    }
-  }
-
-  // Schedule the waiters.
-  for (std::size_t index = 0; index != array_usage; ++index) {
-    auto&& e = fibers_quick[index];
-    e->scheduling_group->Resume(e, std::unique_lock(e->scheduler_lock));
-  }
-  while (true) {
-    auto* e = fibers_slow.pop_front();
-    if (!e) {
+    auto* wb = impl_.WakeOne();
+    if (!wb) {
       return;
     }
-    e->scheduling_group->Resume(e, std::unique_lock(e->scheduler_lock));
+
+    // This is fiber waiter.
+    if (wb->waiter) {
+      wb->waiter->scheduling_group->Resume(wb->waiter);
+      continue;
+    }
+
+    // This is pthread waiter.
+    wb->futex.Wake(1);
   }
 }
 
@@ -355,12 +401,10 @@ void ConditionVariable::notify_all() noexcept {
 ExitBarrier::ExitBarrier() : count_(1) {}
 
 std::unique_lock<Mutex> ExitBarrier::GrabLock() {
-  TRPC_DCHECK(IsFiberContextPresent());
   return std::unique_lock(lock_);
 }
 
 void ExitBarrier::UnsafeCountDown(std::unique_lock<Mutex> lk) {
-  TRPC_DCHECK(IsFiberContextPresent());
   TRPC_CHECK(lk.owns_lock() && lk.mutex() == &lock_);
 
   // tsan reports a data race if we unlock the lock before notifying the
@@ -375,8 +419,6 @@ void ExitBarrier::UnsafeCountDown(std::unique_lock<Mutex> lk) {
 }
 
 void ExitBarrier::Wait() {
-  TRPC_DCHECK(IsFiberContextPresent());
-
   std::unique_lock lk(lock_);
   return cv_.wait(lk, [this] { return count_ == 0; });
 }
@@ -384,8 +426,15 @@ void ExitBarrier::Wait() {
 // Implementation of `Event` goes below.
 
 void Event::Wait() {
-  TRPC_DCHECK(IsFiberContextPresent());
+  if (IsFiberContextPresent()) {
+    WaitFromFiber();
+    return;
+  }
 
+  WaitFromPthread();
+}
+
+void Event::WaitFromFiber() {
   auto current = GetCurrentFiberEntity();
   WaitBlock wb = {.waiter = current};
   std::unique_lock lk(current->scheduler_lock);
@@ -396,20 +445,38 @@ void Event::Wait() {
   }
 }
 
+void Event::WaitFromPthread() {
+  // Set waiter to nullptr as we are in pthread context.
+  WaitBlock wb = {.waiter = nullptr};
+  // Must get state before AddWaiter.
+  trpc::FutexNotifier::State st = wb.futex.GetState();
+  if (impl_.AddWaiter(&wb)) {
+    wb.futex.Wait(st, nullptr);
+  } else {
+    // The event is set already, return immediately.
+  }
+}
+
 void Event::Set() {
-  // `IsFiberContextPresent()` is not checked. This method is explicitly allowed
-  // to be called out of fiber context.
-  FiberEntityList fibers;
-  impl_.SetPersistentAwakened(fibers);
+  WaitBlockList wbs;
+  impl_.SetPersistentAwakened(wbs);
 
   // Fiber wake-up must be delayed until we're done with `impl_`, otherwise
   // `impl_` can be destroyed after its emptied but before we touch it again.
   while (true) {
-    auto* e = fibers.pop_front();
-    if (!e) {
+    auto* wb = wbs.pop_front();
+    if (!wb) {
       return;
     }
-    e->scheduling_group->Resume(e, std::unique_lock(e->scheduler_lock));
+
+    // This is fiber waiter.
+    if (wb->waiter) {
+      wb->waiter->scheduling_group->Resume(wb->waiter);
+      continue;
+    }
+
+    // This is pthread waiter.
+    wb->futex.Wake(1);
   }
 }
 

@@ -134,10 +134,11 @@ void FiberTcpConnComplexConnector::ConnectionCleanFunction(Connection* conn) {
   SetHealthy(false);
 
   RefPtr connector(ref_ptr, this);
-  bool flag = options_.connector_group->DelConnector(this);
-  if (!flag) {
-    return;
-  }
+
+  // When connector becomes unhealthy, it may be deleted by another thread at GetOrCreate in ConnectorGroup.
+  // DelConnector invoking here may fail, but still need ClearResource.
+  // The atomic variable cleanup_ will keep ClearResource being invoked only once.
+  options_.connector_group->DelConnector(this);
 
   if (cleanup_.exchange(true)) {
     return;
@@ -234,7 +235,7 @@ bool FiberTcpConnComplexConnector::MessageHandleFunction(const ConnectionPtr& co
       if (TRPC_UNLIKELY(ctx.Get() == nullptr)) {
         // The request corresponding to the response cannot be found,
         // and the request may have timed out, so it will not be processed
-        TRPC_LOG_WARN("can not find request, id: " << id << ", maybe timeout");
+        TRPC_LOG_WARN("can not find request, request_id: " << id << ", maybe timeout");
         continue;
       }
 
