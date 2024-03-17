@@ -27,6 +27,8 @@
 
 #include "trpc/common/config/default_log_conf.h"
 #include "trpc/common/config/default_log_conf_parser.h"
+#include "trpc/common/config/local_file_sink_conf.h"
+#include "trpc/common/config/local_file_sink_conf_parser.h"
 #include "trpc/common/config/default_value.h"
 #include "trpc/log/logging.h"
 #include "trpc/util/log/log.h"
@@ -132,7 +134,7 @@ class DefaultLog : public Log {
   /// @param flag The custom flag 
   /// @return 0 
   template<typename Sink, typename SinkConfig, typename CustomFormatter>
-  int SetCustomFlag(const char* logger_name, const char flag) {
+  int SetCustomFlag(const char* logger_name, const char* sink_name, const char flag) {
       if (instances_.find(logger_name) == instances_.end()) {
         return 0;
       }
@@ -140,7 +142,7 @@ class DefaultLog : public Log {
       auto& instance = instances_[logger_name];
       SinkConfig sink_config;
       // configuration does not exist and return
-      if (!GetLoggerConfig<SinkConfig>(instance.config.name, sink_config)) return 0;
+      if (!YAML::GetDefaultLoggerSinkConfig<SinkConfig>(instance.config.name, "sinks", sink_name, sink_config)) return 0; 
 
       std::string format = sink_config.format;
       if (format.empty() || format.find(flag) == std::string::npos) {
