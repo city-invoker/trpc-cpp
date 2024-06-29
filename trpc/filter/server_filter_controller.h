@@ -17,11 +17,13 @@
 #include <vector>
 
 #include "trpc/filter/server_filter_base.h"
+#include "trpc/util/singleton.h"
 
 namespace trpc {
 
 /// @brief Execution controller for server filters.
-class ServerFilterController {
+
+class ServerFilterController : public Singleton<ServerFilterController> {
  public:
   /// @brief Run server filters in specified fitler point.
   /// @param type filter point

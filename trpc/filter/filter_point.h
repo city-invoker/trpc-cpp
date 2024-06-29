@@ -54,10 +54,12 @@ enum class FilterPoint {
 
   SERVER_PRE_IO_SEND_MSG = kServerFilterPrefix | 8,   ///< Before performs the I/O operation for sending response
   SERVER_POST_IO_SEND_MSG = kServerFilterPrefix | 9,  ///< After performs the I/O operation for sending response
+  SERVER_PRE_CRYPTO = kServerFilterPrefix | 10, //After recv binary msg, before decode, for decrypt and verify signature purpose
+  SERVER_POST_CRYPTO = kServerFilterPrefix | 11, //After code to binary, befor sending, for encrypt and signature purpose
 };
 
 // Total number of filter points.
-constexpr int kFilterNum = 20;
+constexpr int kFilterNum = 22;
 
 // The number of filter points for the client and server respectively.
 constexpr int kFilterTypeNum = kFilterNum / 2;

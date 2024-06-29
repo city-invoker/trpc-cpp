@@ -214,6 +214,7 @@ int FiberBindAdapter::SendMsg(STransportRspMsg* msg) {
   }
 
   bind_info.run_server_filters_function(FilterPoint::SERVER_POST_SCHED_SEND_MSG, msg);
+  bind_info.run_server_filters_function(FilterPoint::SERVER_POST_CRYPTO, msg);
 
   int ret = -1;
   if (msg->context->GetNetType() == ServerContext::NetType::kTcp) {

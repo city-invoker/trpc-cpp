@@ -234,6 +234,14 @@ STransportReqMsg* ServiceAdapter::CreateSTransportReqMsg(const ConnectionPtr& co
   context->SetServerCodec(server_codec_.get());
   context->SetRequestMsg(server_codec_->CreateRequestObject());
   context->SetResponseMsg(server_codec_->CreateResponseObject());
+  
+  FilterStatus filter_ret = ServerFilterController::GetInstance()->RunMessageServerFilters(FilterPoint::SERVER_PRE_CRYPTO, context);
+  if (filter_ret == FilterStatus::REJECT) {
+    TRPC_FMT_ERROR_EVERY_SECOND("request authorize error");
+    auto& status = context->GetStatus();
+    status.SetFrameworkRetCode(GetDefaultServerRetCode(codec::ServerRetCode::AUTH_ERROR));
+    status.SetErrorMessage("request authorize error");
+  }
 
   bool ret = server_codec_->ZeroCopyDecode(context, std::move(msg), context->GetRequestMsg());
   if (!ret) {

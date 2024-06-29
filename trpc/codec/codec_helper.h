@@ -50,7 +50,7 @@ enum class ClientRetCode : int {
 };
 
 /// @brief The default return code of the server, if `ServerCodec` does not implement `GetProtocolRetCode`
-const std::vector<int> kDefaultServerRetcodes{TrpcRetCode::TRPC_INVOKE_SUCCESS,
+const std::vector<int> kDefaultServerRetcodes {TrpcRetCode::TRPC_INVOKE_SUCCESS,
                                               TrpcRetCode::TRPC_SERVER_TIMEOUT_ERR,
                                               TrpcRetCode::TRPC_SERVER_OVERLOAD_ERR,
                                               TrpcRetCode::TRPC_SERVER_LIMITED_ERR,
@@ -62,7 +62,7 @@ const std::vector<int> kDefaultServerRetcodes{TrpcRetCode::TRPC_INVOKE_SUCCESS,
                                               TrpcRetCode::TRPC_INVOKE_UNKNOWN_ERR};
 
 /// @brief The default return code of the client, if `ServerCodec` does not implement `GetProtocolRetCode`
-const std::vector<int> kDefaultClientRetcodes{TrpcRetCode::TRPC_INVOKE_SUCCESS,
+const std::vector<int> kDefaultClientRetcodes {TrpcRetCode::TRPC_INVOKE_SUCCESS,
                                               TrpcRetCode::TRPC_CLIENT_INVOKE_TIMEOUT_ERR,
                                               TrpcRetCode::TRPC_CLIENT_FULL_LINK_TIMEOUT_ERR,
                                               TrpcRetCode::TRPC_CLIENT_CONNECT_ERR,
