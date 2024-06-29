@@ -65,6 +65,9 @@ class ServerContext : public RefCounted<ServerContext> {
   ~ServerContext();
 
   //////////////////////////////////////////////////////////////////////////
+  void SetMsgNo(const std::string& val) { msgno = val; };
+
+  std::string GetMsgNo() { return msgno; };
 
   /// @brief Framework use or for testing. Set the time(us) when the current request is received from the network.
   void SetRecvTimestampUs(uint64_t value) { metrics_info_.recv_timestamp_us = value; }
@@ -628,10 +631,6 @@ class ServerContext : public RefCounted<ServerContext> {
   bool GetStateFlag(uint8_t mask) const { return invoke_info_.state_flag & mask; }
 
   void HandleEncodeErrorResponse(std::string&& err_msg);
-
-  void SetMsgNo(const std::string& msgno) { msgno = msgno};
-
-  std::string GetMsgNo() { return msgno };
 
  private:
   static constexpr uint8_t kIsResponseMask = 0b00000001;

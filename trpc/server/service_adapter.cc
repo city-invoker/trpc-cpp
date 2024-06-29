@@ -46,6 +46,7 @@
 #include "trpc/util/log/logging.h"
 #include "trpc/util/object_pool/object_pool_ptr.h"
 #include "trpc/util/time.h"
+#include "trpc/util/algorithm/uuid.h"
 
 namespace trpc {
 
@@ -247,6 +248,11 @@ STransportReqMsg* ServiceAdapter::CreateSTransportReqMsg(const ConnectionPtr& co
   service->FillServerContext(context);
   context->SetService(service);
   context->SetFilterController(&(service->GetFilterController()));
+
+  const auto& kvs = context->GetRequestMsg()->GetKVInfos();
+  auto itr = kvs.find("msgno");
+  const std::string& msgno = (itr == kvs.end()) ? UUID::uuid() : itr->second; 
+  context->SetMsgNo(msgno);
 
   auto* req_msg = trpc::object_pool::New<STransportReqMsg>();
   req_msg->context = std::move(context);

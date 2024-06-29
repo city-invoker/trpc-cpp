@@ -11,7 +11,7 @@
 #
 #
 
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.5)
 
 #---------------------------------------------------------------------------------------
 # Start tRPC-Cpp
@@ -83,7 +83,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}  -fstack-protector -Wall -Wunused-but-se
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}  -fno-omit-frame-pointer -Wno-free-nonheap-object")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}  -MD -MF -fPIC")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}  -fno-canonical-system-headers -Wno-builtin-macro-redefined")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}  -Wno-implicit-fallthrough")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}  -Wno-implicit-fallthrough -Wno-sign-compare")
 
 if(TRPC_CXX_FLAGS_FPIC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}  -fPIC")

@@ -13,6 +13,8 @@
 
 #include "trpc/util/log/default/sinks/local_file/local_file_sink.h"
 
+#include "trpc/util/log/msg_no_formatter.h"
+
 namespace trpc {
 
 /// @brief Initializing the sink
@@ -43,6 +45,9 @@ int LocalFileSink::Init(const LocalFileSinkConfig& config) {
   auto formatter = format.empty()
                        ? std::make_unique<spdlog::pattern_formatter>(spdlog::pattern_time_type::local, eol)
                        : std::make_unique<spdlog::pattern_formatter>(format, spdlog::pattern_time_type::local, eol);
+
+  formatter->add_flag<trpc::MsgNoFormatter>('q');
+  formatter->set_pattern(format);
   sink_->set_formatter(std::move(formatter));
 
   return 0;
