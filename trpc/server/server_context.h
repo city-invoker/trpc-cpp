@@ -629,6 +629,10 @@ class ServerContext : public RefCounted<ServerContext> {
 
   void HandleEncodeErrorResponse(std::string&& err_msg);
 
+  void SetMsgNo(const std::string& msgno) { msgno = msgno};
+
+  std::string GetMsgNo() { return msgno };
+
  private:
   static constexpr uint8_t kIsResponseMask = 0b00000001;
   static constexpr uint8_t kNeedResponseWhenDecodeFailMask = 0b00000010;
@@ -742,6 +746,8 @@ class ServerContext : public RefCounted<ServerContext> {
   };
 
  private:
+  //global uniq msgno, value could be either: a)from client req trans-info, b)gen a local uuid 
+  std::string msgno;
   // not owned
   Service* service_{nullptr};
 

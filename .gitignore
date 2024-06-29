@@ -3,11 +3,13 @@
 
 bazel-*
 *.swp
+*.sw*
 *.o
 *.log
 *.so
 *.a
 *.dylib
+tags
 
 CMakeCache.txt                                                                                                                                           
 CMakeFiles
