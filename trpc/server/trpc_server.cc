@@ -107,10 +107,10 @@ void TrpcServer::BuildAdminServiceAdapter() {
     option.max_conn_num = 100;
     option.max_packet_size = UINT32_MAX;
     option.threadmodel_instance_name = std::string(kSeparateAdminInstance);
+    admin_service_name_ = option.service_name;
 
     auto service_adapter = std::make_shared<ServiceAdapter>(std::move(option));
 
-    admin_service_name_ = option.service_name;
     admin_service_ = std::make_shared<trpc::AdminService>();
     admin_service_->SetAdapter(service_adapter.get());
 
@@ -211,6 +211,21 @@ void TrpcServer::Stop() {
       TRPC_LOG_DEBUG(iter.first << " start to UnregisterName...");
       UnregisterName(iter.second);
     }
+  }
+
+  // Disable the readable event for the listening socket to avoid creating new connections
+  // Disable the readable event for the connected socket to avoid receiving new requests
+  std::vector<ServiceAdapterPtr> stop_listened_adapters;
+  for (const auto& iter : service_adapters_) {
+    TRPC_LOG_DEBUG(iter.first << " start to StopListen...");
+    auto stop_listened_adapter_it =
+        std::find(stop_listened_adapters.begin(), stop_listened_adapters.end(), iter.second);
+    if (stop_listened_adapter_it != stop_listened_adapters.end()) {
+      continue;
+    }
+
+    iter.second->StopListen(true);
+    stop_listened_adapters.push_back(iter.second);
   }
 
   uint64_t begin_stop_time = trpc::time::GetMilliSeconds();

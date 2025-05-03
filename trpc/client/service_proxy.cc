@@ -46,11 +46,8 @@
 #include "trpc/util/net_util.h"
 #include "trpc/util/string/string_util.h"
 #include "trpc/util/time.h"
-#include "trpc/util/unique_id.h"
 
 namespace trpc {
-
-static UniqueId unique_id;
 
 Status ServiceProxy::UnaryInvoke(const ClientContextPtr& context, const ProtocolPtr& req, ProtocolPtr& rsp) {
   TRPC_FMT_DEBUG("UnaryInvoke msg request_id: {}", context->GetRequestId());
@@ -407,7 +404,7 @@ void ServiceProxy::FillClientContext(const ClientContextPtr& context) {
 
   // Set unique request id
   if (TRPC_LIKELY(!context->IsSetRequestId())) {
-    context->SetRequestId(unique_id.GenerateId());
+    context->SetRequestId(unique_id_.GenerateId());
   }
 
   if (option_->timeout == UINT32_MAX && context->GetTimeout() == UINT32_MAX) {
@@ -475,6 +472,7 @@ TransInfo ServiceProxy::ProxyOptionToTransInfo() {
   trans_info.fiber_pipeline_connector_queue_size = option_->fiber_pipeline_connector_queue_size;
   trans_info.protocol = option_->codec_name;
   trans_info.fiber_connpool_shards = option_->fiber_connpool_shards;
+  trans_info.endpoint_hash_bucket_size = option_->endpoint_hash_bucket_size;
 
   // set the callback function
   trans_info.conn_close_function = option_->proxy_callback.conn_close_function;
@@ -796,7 +794,7 @@ void ConvertEndpointInfo(const std::string& ip_ports, std::vector<TrpcEndpointIn
   for (auto const& name : vec) {
     TrpcEndpointInfo endpoint;
     // add to vec_endpoint when parse endpoints successfully
-    if (util::ParseHostPort(name, endpoint.host, endpoint.port, endpoint.is_ipv6)) {
+    if (util::ParseHostPort(name, endpoint.host, endpoint.port, endpoint.is_ipv6, endpoint.weight)) {
       vec_endpoint.emplace_back(endpoint);
     }
   }
@@ -811,6 +809,7 @@ void ServiceProxy::SetEndpointInfo(const std::string& endpoint_info) {
 
   RouterInfo info;
   info.name = GetServiceName();
+  info.load_balance_name = option_->load_balance_name;
   ConvertEndpointInfo(endpoint_info, info.info);
   if (info.info.size() <= 0) {
     TRPC_LOG_ERROR("Service endpoint info of " << GetServiceName()

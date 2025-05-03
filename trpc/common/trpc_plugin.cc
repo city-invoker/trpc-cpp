@@ -35,6 +35,8 @@
 #ifdef TRPC_BUILD_INCLUDE_RPCZ
 #include "trpc/rpcz/collector.h"
 #endif
+#include "trpc/naming/common/util/loadbalance/trpc_load_balance.h"
+#include "trpc/overload_control/trpc_overload_control.h"
 #include "trpc/runtime/common/periphery_task_scheduler.h"
 #include "trpc/runtime/common/runtime_info_report/runtime_info_reporter.h"
 #include "trpc/runtime/common/stats/frame_stats.h"
@@ -54,6 +56,7 @@
 #include "trpc/transport/common/ssl_helper.h"
 #include "trpc/util/log/default/default_log.h"
 #include "trpc/util/net_util.h"
+#include "trpc/naming/common/util/loadbalance/trpc_load_balance.h"
 
 namespace trpc {
 
@@ -80,7 +83,10 @@ int TrpcPlugin::RegisterPlugins() {
   TRPC_ASSERT(metrics::Init());
   TRPC_ASSERT(tracing::Init());
   TRPC_ASSERT(telemetry::Init());
+  TRPC_ASSERT(loadbalance::Init());
   TRPC_ASSERT(naming::Init());
+
+  TRPC_ASSERT(overload_control::Init());
 
   CollectPlugins();
   InitPlugins();
@@ -228,6 +234,8 @@ int TrpcPlugin::UnregisterPlugins() {
   runtime::StopReportRuntimeInfo();
 
   StopPlugins();
+
+  overload_control::Stop();
 
   PeripheryTaskScheduler::GetInstance()->Stop();
   PeripheryTaskScheduler::GetInstance()->Join();
@@ -528,6 +536,10 @@ void TrpcPlugin::DestroyResource() {
   compressor::Destroy();
 
   log::Destroy();
+
+  overload_control::Destroy();
+
+  GetTrpcClient()->Destroy();
 
   is_all_inited_ = false;
   is_all_destroyed_ = false;
